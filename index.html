@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LIFF 外部/LIFFブラウザ開き方テスト</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    :root{--bg:#0b1220;--card:#121a2b;--border:#22314d;--text:#e7ecf6;--muted:#9fb3d1;--accent:#4da3ff}
+    body{margin:0;background:var(--bg);color:var(--text);font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Apple Color Emoji", "Segoe UI Emoji"}
+    .wrap{max-width:880px;margin:0 auto;padding:24px}
+    h1{font-size:20px;margin:0 0 8px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin:16px 0}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    input[type="text"]{flex:1 1 420px;background:#0e1626;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:12px}
+    .btn{appearance:none;background:#1b2a44;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px 14px;cursor:pointer}
+    .btn:hover{border-color:var(--accent)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+    .note{color:var(--muted);font-size:13px}
+    code{background:#0e1626;padding:2px 6px;border-radius:6px;border:1px solid var(--border)}
+    a.test{display:inline-block}
+    .log{white-space:pre-wrap;background:#0e1626;border:1px solid var(--border);border-radius:12px;padding:12px;min-height:120px}
+    label small{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>LIFF 外部/LIFFブラウザ開き方テスト</h1>
+    <p class="note">URLを入力して各手段で遷移し、外部ブラウザで開くか LIFF 内蔵ブラウザのままかを確認できます。iOS/Android/外部ブラウザで挙動が異なる点にも注意。</p>
+
+    <div class="card">
+      <label>テスト先URL <small>（例: https://lineapiusecase.com/）</small></label>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="url" placeholder="https://" value="https://lineapiusecase.com/" />
+        <button class="btn" id="setAnchors">リンクを更新</button>
+      </div>
+      <div class="note" style="margin-top:6px">LIFF ID を設定して起動後にお試しください。アンカーは「リンクを更新」後に有効になります。</div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;margin:0 0 10px">各種オープン方法</h2>
+      <div class="grid" id="btnGrid">
+        <button class="btn" data-action="location-href">window.location.href = URL</button>
+        <button class="btn" data-action="location-assign">location.assign(URL)</button>
+        <button class="btn" data-action="location-replace">location.replace(URL)</button>
+        <button class="btn" data-action="window-open">window.open(URL)</button>
+        <button class="btn" data-action="window-open-blank">window.open(URL, '_blank')</button>
+        <button class="btn" data-action="form-post">HTML form method=GET で遷移</button>
+        <button class="btn" data-action="liff-openWindow-internal">liff.openWindow({ external:false })</button>
+        <button class="btn" data-action="liff-openWindow-external">liff.openWindow({ external:true })</button>
+      </div>
+
+      <div style="margin-top:14px">
+        <a class="test btn" id="a-normal" href="#">&lt;a&gt; 通常リンク</a>
+        <a class="test btn" id="a-blank" href="#" target="_blank">&lt;a target="_blank"&gt;</a>
+        <a class="test btn" id="a-blank-noopener" href="#" target="_blank" rel="noopener">&lt;a target="_blank" rel="noopener"&gt;</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;margin:0 0 10px">コンテキスト情報</h2>
+      <div class="grid">
+        <div>
+          <div><strong>UA:</strong> <span id="ua"></span></div>
+          <div><strong>inClient:</strong> <span id="inClient">-</span></div>
+          <div><strong>OS:</strong> <span id="os">-</span></div>
+          <div><strong>Language:</strong> <span id="lang">-</span></div>
+        </div>
+        <div>
+          <div><strong>LIFF Version:</strong> <span id="liffVer">-</span></div>
+          <div><strong>isLoggedIn:</strong> <span id="isLoggedIn">-</span></div>
+          <div><strong>accessToken(短縮表示):</strong> <span id="token">-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;margin:0 0 10px">ログ</h2>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+
+  <script>
+    // ==== 設定 ==== 
+    const LIFF_ID = "2008125637-koGJyxPM"; // ← ご自身の LIFF ID に置き換え
+
+    // ==== ユーティリティ ====
+    const el = (id)=>document.getElementById(id);
+    const log = (msg)=>{ const box=el('log'); box.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`; box.scrollTop = box.scrollHeight; };
+    const shorten = (s)=> s ? (s.length>24 ? s.slice(0,10)+"..."+s.slice(-8) : s) : "";
+
+    // UA 表示
+    el('ua').textContent = navigator.userAgent;
+    el('lang').textContent = navigator.language;
+
+    // 入力URL取得
+    const getURL = ()=> el('url').value.trim();
+
+    // アンカー href を更新
+    function updateAnchors(){
+      const u = getURL();
+      ['a-normal','a-blank','a-blank-noopener'].forEach(id=>{ el(id).setAttribute('href', u || '#'); });
+      log(`アンカーを ${u} に更新しました`);
+    }
+    el('setAnchors').addEventListener('click', updateAnchors);
+
+    // 動作ボタン
+    document.getElementById('btnGrid').addEventListener('click', (e)=>{
+      if(!(e.target instanceof HTMLElement)) return;
+      const act = e.target.dataset.action; if(!act) return;
+      const url = getURL(); if(!url){ alert('URL を入力してください'); return; }
+      log(`実行: ${act} → ${url}`);
+      switch(act){
+        case 'location-href':
+          window.location.href = url; break;
+        case 'location-assign':
+          window.location.assign(url); break;
+        case 'location-replace':
+          window.location.replace(url); break;
+        case 'window-open':
+          window.open(url); break;
+        case 'window-open-blank':
+          window.open(url, '_blank'); break;
+        case 'form-post': {
+          const f = document.createElement('form');
+          f.method = 'GET';
+          f.action = url;
+          document.body.appendChild(f);
+          f.submit();
+          break;
+        }
+        case 'liff-openWindow-internal':
+          liff.openWindow({ url, external: false });
+          break;
+        case 'liff-openWindow-external':
+          liff.openWindow({ url, external: true });
+          break;
+      }
+    });
+
+    // ==== LIFF 初期化 ====
+    async function init(){
+      try{
+        if(!LIFF_ID || LIFF_ID === '2008125637-koGJyxPM'){
+          log('⚠️ LIFF_ID が未設定です。コード内の LIFF_ID を置き換えてください。');
+        }
+        log('LIFF init 開始');
+        await liff.init({ liffId: LIFF_ID });
+        log('LIFF init 完了');
+
+        const inClient = liff.isInClient();
+        el('inClient').textContent = String(inClient);
+        el('os').textContent = liff.getOS();
+        el('liffVer').textContent = liff.getVersion ? liff.getVersion() : 'N/A';
+
+        if(!liff.isLoggedIn()){
+          el('isLoggedIn').textContent = 'false';
+        }else{
+          el('isLoggedIn').textContent = 'true';
+          const token = liff.getAccessToken();
+          el('token').textContent = shorten(token);
+        }
+
+        // 初期アンカー更新
+        updateAnchors();
+      }catch(err){
+        console.error(err);
+        log('❌ LIFF 初期化エラー: '+ (err && err.message ? err.message : String(err)));
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
